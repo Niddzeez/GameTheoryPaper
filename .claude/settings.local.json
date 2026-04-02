@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python reddit_pipeline_safe.py --data_dir \"C:\\\\Users\\\\Ankita\\\\Downloads\\\\reddit\\\\comments\" --out_dir .output)",
+      "Bash(python \"c:\\\\Users\\\\Ankita\\\\Documents\\\\Reference books,notes\\\\S26-sem6\\\\GT\\\\GameTheoryPaper\\\\Reddit-2015-v2\\\\reddit_pipeline_safe.py\" --data_dir \"C:\\\\Users\\\\Ankita\\\\Downloads\\\\reddit\\\\comments\" --out_dir \"c:\\\\Users\\\\Ankita\\\\Documents\\\\Reference books,notes\\\\S26-sem6\\\\GT\\\\GameTheoryPaper\\\\Reddit-2015-v2\\\\output\")",
+      "Bash(python \"c:\\\\Users\\\\Ankita\\\\Documents\\\\Reference books,notes\\\\S26-sem6\\\\GT\\\\GameTheoryPaper\\\\Reddit-2015-v2\\\\fast_steps34.py\" --out_dir \"c:\\\\Users\\\\Ankita\\\\Documents\\\\Reference books,notes\\\\S26-sem6\\\\GT\\\\GameTheoryPaper\\\\Reddit-2015-v2\\\\output\")",
+      "Bash(tasklist /FI 'IMAGENAME eq python.exe' /FO CSV)",
+      "Bash(python -c \"import os; files=os.listdir\\(r''c:\\\\Users\\\\Ankita\\\\Documents\\\\Reference books,notes\\\\S26-sem6\\\\GT\\\\GameTheoryPaper\\\\Reddit-2015-v2\\\\output''\\); print\\(''\\\\n''.join\\(sorted\\(files\\)\\)\\)\")",
+      "Bash(python model_calibration.py --out_dir output)",
+      "Bash(set PYTHONIOENCODING=utf-8)",
+      "Bash(python -X utf8 model_calibration.py --out_dir output)",
+      "Bash(python -c \":*)",
+      "Bash(python -c \"import os; print\\(os.path.getsize\\(r''c:\\\\Users\\\\Ankita\\\\Documents\\\\Reference books,notes\\\\S26-sem6\\\\GT\\\\GameTheoryPaper\\\\Reddit-2015-v2\\\\output\\\\calibration_log.txt''\\)\\); files = os.listdir\\(r''c:\\\\Users\\\\Ankita\\\\Documents\\\\Reference books,notes\\\\S26-sem6\\\\GT\\\\GameTheoryPaper\\\\Reddit-2015-v2\\\\output''\\); print\\([f for f in files if ''calib'' in f.lower\\(\\) or ''stage'' in f.lower\\(\\) or ''plot'' in f.lower\\(\\)]\\)\")"
+    ]
+  }
+}
