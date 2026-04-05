@@ -1,0 +1,6 @@
+feature,mean_LOO_coef
+intercept,-1.343770535403145
+E1_enforcement_drift,-1.2617604667241766
+E2_violation_pressure,-0.7475840252307542
+E3_legitimacy_decay,-0.24459386926150367
+E4_removal_concentration,0.6566006347399362

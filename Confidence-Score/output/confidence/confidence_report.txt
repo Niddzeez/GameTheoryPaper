@@ -1,0 +1,190 @@
+
+======================================================================
+MODEL CREDIBILITY INDEX — FULL REPORT
+======================================================================
+Generated automatically by confidence_score.py
+
+======================================================================
+COMPONENT 1: Q_fit (ODE Goodness-of-Fit)
+======================================================================
+  Formula: Q_fit = 1 − fit_nll / SS_obs
+  Interpretation: R²-equivalent for the Stage 1 ODE (Box & Jenkins 1976)
+
+  N subreddits with valid Q_fit:            16
+  Mean Q_fit:                               -0.1639
+  Median Q_fit:                             -0.0223
+  Q_fit > 0.60 (strong fit):                0 of 16
+  Q_fit < 0 (worse than mean):              10 of 16
+
+  Subreddit                    Q_fit     fit_nll      SS_obs   n_days
+  -----------------------------------------------------------------
+  [B] r/fatpeoplehate            0.3705      0.0020    0.003166       32
+      r/MensRights               0.1390      0.0212    0.024622      123
+      r/todayilearned            0.1147      0.0032    0.003648      123
+      r/news                     0.0874      0.0582    0.063758      123
+      r/worldnews                0.0321      0.0177    0.018263      123
+      r/TumblrInAction           0.0083      0.0091    0.009170      123
+      r/KotakuInAction          -0.0058      0.0117    0.011645      123
+      r/loseit                  -0.0142      0.0129    0.012691      123
+      r/funny                   -0.0304      0.0199    0.019273      123
+      r/progresspics            -0.1091      0.0513    0.046261      123
+      r/AskReddit               -0.1125      0.0082    0.007360      123
+      r/askscience              -0.1360      0.8371    0.736873      123
+      r/politics                -0.1879      0.0048    0.004064      123
+  [B] r/CoonTown                -0.4673      0.0652    0.044443       84
+      r/AskHistorians           -0.5102      0.7304    0.483616      123
+      r/science                 -1.8011      2.3171    0.827212      123
+
+======================================================================
+COMPONENT 2: Q_backfire (Spearman rho: C/g* -> post-ban slope)
+======================================================================
+  Formula: Q_backfire = (rho_s + 1) / 2  (Spearman rank correlation, corpus-level)
+  Pre-ban C/g* -> post-ban violation slope (fully out-of-sample)
+
+  Spearman rho_s:                           0.1393
+  p-value:                                  0.6205
+  Q_backfire:                               0.5696  (inconclusive)
+  N subreddits:                             15
+
+  Subreddit                       g*   C_pre     C/g*       Slope       p
+  ----------------------------------------------------------------------
+      r/funny                    0.0019  0.0693  37.1315   -0.000169   0.011
+      r/loseit                   0.0049  0.0368   7.4323   -0.000118   0.011
+      r/askscience               0.0699  0.4206   6.0152   +0.000797   0.026
+      r/science                  0.1152  0.3845   3.3375   -0.000446   0.233
+      r/news                     0.0675  0.1206   1.7862   +0.000209   0.085
+      r/worldnews                0.0582  0.0928   1.5931   -0.000112   0.051
+      r/AskHistorians            0.2108  0.3248   1.5412   -0.000231   0.405
+      r/MensRights               0.0441  0.0549   1.2444   -0.000388   0.000
+      r/AskReddit                0.0660  0.0686   1.0394   -0.000112   0.000
+      r/KotakuInAction           0.0387  0.0355   0.9155   -0.000263   0.000
+      r/todayilearned            0.0714  0.0603   0.8445   -0.000081   0.000
+      r/politics                 0.0746  0.0552   0.7396   -0.000008   0.749
+      r/TumblrInAction           0.0566  0.0379   0.6696   -0.000067   0.133
+      r/progresspics             0.1129  0.0564   0.4997   -0.000171   0.046
+  [B] r/CoonTown                 0.1611  0.0747   0.4634   -0.001145   0.000
+
+======================================================================
+COMPONENT 3: Q_substitution (T–C Substitution Mechanism)
+======================================================================
+  OLS: C_smooth = β₀ + β₁·T_norm + β₂·compliance + ε
+  Prediction: β₁ < 0  (Tyler 1990; Levi 1988)
+
+  β₁ (coefficient on T_norm):               0.004340
+  SE(β₁):                                   0.004536
+  t-statistic:                              0.9568
+  p-value:                                  0.338817
+  Partial r(T, C | compliance):             0.0234
+  Partial r p-value:                        0.338673
+  R² (pooled regression):                   0.9019
+  N observations:                           1680
+  Q_substitution score:                     0.4883
+
+  RESULT: [X] No T-C substitution detected (b1 >= 0)
+
+======================================================================
+COMPONENT 4: Q_user (User Behavioral Consistency)
+======================================================================
+  One-way ANOVA: ρ_u grouped by user_type
+  ρ_u = Pearson r(C_smooth on posting day, is_removed)
+  Prediction: JOINER ρ_u < INITIATOR ρ_u  (Granovetter 1978)
+
+  ANOVA F-statistic:                        3146.2292
+  ANOVA p-value:                            0.000000
+  η² (effect size):                         0.0131
+  Mean ρ_u INITIATOR:                       0.0027
+  Mean ρ_u JOINER:                          0.0193
+  Mean ρ_u COMPLIER:                        0.0000
+  Mann-Whitney U (I>J):                     1250
+  Mann-Whitney p (I>J):                     0.647516
+  N INITIATOR:                              13
+  N JOINER:                                 205
+  N COMPLIER:                               473112
+  Q_user score (η²):                        0.0131
+
+======================================================================
+COMPONENT 5: Q_regime (Stage 2 Stability Margin)
+======================================================================
+  margin = (α_gov − α_gov_min) / |α_gov_min|
+  Q_regime = (tanh(margin) + 1) / 2
+  Cross-val: r(Q_regime, −C_volatility) should be positive
+
+  Cross-val r(margin, −volatility):         -0.0541
+  Cross-val p:                              0.8422
+  N with margin data:                       1
+  N stable (margin > 0):                    0
+  N trap (margin < 0):                      1
+
+  Subreddit                    margin  Q_regime  regime                            Ξ
+  ---------------------------------------------------------------------------
+      r/news                     -0.9047    0.1407  Governance trap              0.0007
+      r/AskHistorians                n/a    0.5000  Indeterminate                   n/a
+      r/AskReddit                    n/a    0.5000  Indeterminate                   n/a
+  [B] r/CoonTown                     n/a    0.5000  Structural instability      -0.0828
+      r/KotakuInAction               n/a    0.5000  Structural instability      -0.1784
+      r/MensRights                   n/a    0.5000  Indeterminate                   n/a
+      r/TumblrInAction               n/a    0.5000  Indeterminate                   n/a
+      r/askscience                   n/a    0.5000  Indeterminate                   n/a
+  [B] r/fatpeoplehate                n/a    0.5000  Indeterminate                   n/a
+      r/funny                        n/a    0.5000  Indeterminate                   n/a
+      r/loseit                       n/a    0.5000  Indeterminate                   n/a
+      r/politics                     n/a    0.5000  Indeterminate                   n/a
+      r/progresspics                 n/a    0.5000  Structural instability      -0.1524
+      r/science                      n/a    0.5000  Indeterminate                   n/a
+      r/todayilearned                n/a    0.5000  Structural instability      -0.0274
+      r/worldnews                    n/a    0.5000  Indeterminate                   n/a
+
+======================================================================
+COMPONENT 6: Q_spillover (Migrant INITIATOR Persistence)
+======================================================================
+  Group A: from_banned_sub=True, user_type=INITIATOR, post-ban
+  Group B: native users in control subreddits, post-ban
+  Test: Mann-Whitney U (one-sided: A > B)
+  Dose: OLS theta_proxy → post-ban removal rate
+
+  Mann-Whitney U:                           nan
+  p-value (one-sided):                      nan
+  Cohen's d:                                nan
+  Mean rate migrants:                       nan
+  Mean rate natives:                        0.0000
+  N migrants (INITIATOR):                   0
+  N natives:                                456507
+  Dose β₁ (theta_proxy):                    nan
+  Dose β₁ p:                                nan
+  Dose R²:                                  nan
+  Q_spillover score:                        nan
+
+======================================================================
+COMPOSITE MCI
+======================================================================
+  MCI = mean(Q_fit_scaled, Q_backfire, Q_sub, Q_user, Q_regime, Q_spill)
+
+  Subreddit                     MCI   Q_fit Q_back  Q_sub  Q_usr  Q_reg  Q_spl  regime                
+  ----------------------------------------------------------------------------------------------------
+      r/MensRights              0.407  0.139 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+      r/todayilearned           0.402  0.115 0.570 0.488 0.013 0.500  n/a   Structural instability
+      r/worldnews               0.386  0.032 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+      r/TumblrInAction          0.381  0.008 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+      r/KotakuInAction          0.379  -0.006 0.570 0.488 0.013 0.500  n/a   Structural instability
+  [B] r/CoonTown                0.379  -0.467 0.570 0.488 0.013 0.500  n/a   Structural instability
+      r/AskHistorians           0.379  -0.510 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+      r/AskReddit               0.379  -0.112 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+      r/science                 0.379  -1.801 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+      r/askscience              0.379  -0.136 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+      r/funny                   0.379  -0.030 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+      r/loseit                  0.379  -0.014 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+      r/progresspics            0.379  -0.109 0.570 0.488 0.013 0.500  n/a   Structural instability
+      r/politics                0.379  -0.188 0.570 0.488 0.013 0.500  n/a   Indeterminate         
+  [B] r/fatpeoplehate           0.376  0.371  n/a  0.488 0.013 0.500  n/a   Indeterminate         
+      r/news                    0.289  0.087 0.570 0.488 0.013 0.141  n/a   Governance trap       
+
+======================================================================
+SENSITIVITY ANALYSIS
+======================================================================
+  500 random weight draws (uniform [0.05, 0.35])
+
+  Mean Spearman ρ:                          0.9844
+  Min  Spearman ρ:                          0.6971
+  Median Spearman ρ:                        1.0000
+
+  RESULT: [OK] RANKING ROBUST (mean rho > 0.85). MCI ordering not an artefact of equal weights.

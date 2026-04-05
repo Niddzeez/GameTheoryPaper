@@ -1,3 +1,23 @@
 Reddit 2015/output/
 Reddit-2015-v2/output/
 Reddit-2015-v2/.output/
+
+# Raw TBBT datasets (large zip files)
+18245670/
+19133343/
+
+# 2020 dataset (not yet integrated)
+Reddit-2020/
+
+# Paper drafts
+paper/
+
+# Large binary outputs
+*.parquet
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/

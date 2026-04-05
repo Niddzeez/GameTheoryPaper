@@ -86,11 +86,18 @@ def stream_zst(filepath, max_rows=None):
 
 
 # Helper functions for processing records and building datasets
-def is_removed(r, kind):
+def is_mod_removed(r, kind):
+    """Moderator-driven removal only — the true enforcement signal (C)."""
     if kind == "comment":
-        return r.get("body", "") in ("[removed]", "[deleted]")
-    return bool(r.get("removed_by_category")) or \
-           r.get("selftext", "") in ("[removed]", "[deleted]")
+        return r.get("body", "") == "[removed]"
+    return bool(r.get("removed_by_category")) or r.get("selftext", "") == "[removed]"
+
+
+def is_self_deleted(r, kind):
+    """User self-deletion — voluntary exit, NOT enforcement."""
+    if kind == "comment":
+        return r.get("body", "") == "[deleted]"
+    return r.get("selftext", "") == "[deleted]"
 
 
 def extract_comment(r):
@@ -101,7 +108,10 @@ def extract_comment(r):
         "score": r.get("score", 0), "created_utc": r.get("created_utc", 0),
         "gilded": r.get("gilded", 0),
         "controversiality": r.get("controversiality", 0),
-        "is_removed": is_removed(r, "comment"),
+        "is_mod_removed": is_mod_removed(r, "comment"),
+        "is_self_deleted": is_self_deleted(r, "comment"),
+        # Legacy combined flag kept for backwards compatibility
+        "is_removed": is_mod_removed(r, "comment") or is_self_deleted(r, "comment"),
     }
 
 
@@ -182,26 +192,55 @@ def build_daily_metrics(out_dir):
     log.info("Computing daily metrics...")
     c_path    = Path(out_dir) / "comments_filtered.csv"
     s_path    = Path(out_dir) / "submissions_filtered.csv"
-    daily_agg = defaultdict(lambda: {"n": 0, "removed": 0, "score_sum": 0.0})
+    daily_agg = defaultdict(lambda: {
+        "n": 0, "mod_removed": 0, "self_deleted": 0, "score_sum": 0.0
+    })
     CHUNK     = 200_000
 
-    for chunk in pd.read_csv(c_path, chunksize=CHUNK,
-                              usecols=["subreddit", "created_utc",
-                                       "is_removed", "score"]):
+    # Determine which columns exist (new pipeline has is_mod_removed/is_self_deleted;
+    # old cached CSVs may only have is_removed)
+    import csv as _csv
+    with open(c_path, "r", encoding="utf-8") as _f:
+        _header = next(_csv.reader(_f))
+    _has_split = "is_mod_removed" in _header and "is_self_deleted" in _header
+
+    if _has_split:
+        _usecols = ["subreddit", "created_utc", "is_mod_removed", "is_self_deleted", "score"]
+    else:
+        log.warning("CSV lacks is_mod_removed/is_self_deleted — re-run stream_filter_write "
+                    "to get the clean split. Falling back: is_removed treated as mod-removal.")
+        _usecols = ["subreddit", "created_utc", "is_removed", "score"]
+
+    for chunk in pd.read_csv(c_path, chunksize=CHUNK, usecols=_usecols):
         chunk["day"] = pd.to_datetime(
             chunk["created_utc"], unit="s", utc=True).dt.floor("D")
+        if _has_split:
+            chunk["is_mod_removed"]  = chunk["is_mod_removed"].fillna(False).astype(bool)
+            chunk["is_self_deleted"] = chunk["is_self_deleted"].fillna(False).astype(bool)
+        else:
+            chunk["is_mod_removed"]  = chunk["is_removed"].fillna(False).astype(bool)
+            chunk["is_self_deleted"] = False
+
         for (sub, day), g in chunk.groupby(["subreddit", "day"]):
             key = (sub, str(day))
-            daily_agg[key]["n"]         += len(g)
-            daily_agg[key]["removed"]   += g["is_removed"].sum()
-            daily_agg[key]["score_sum"] += g["score"].fillna(0).sum()
+            daily_agg[key]["n"]            += len(g)
+            daily_agg[key]["mod_removed"]  += g["is_mod_removed"].sum()
+            daily_agg[key]["self_deleted"] += g["is_self_deleted"].sum()
+            daily_agg[key]["score_sum"]    += g["score"].fillna(0).sum()
         del chunk
         gc.collect()
 
     rows = [{"subreddit": s, "day": pd.Timestamp(d),
-              "n_comments": v["n"], "n_removed": v["removed"],
-              "C_raw": v["removed"] / max(v["n"], 1),
-              "mean_score": v["score_sum"] / max(v["n"], 1)}
+              "n_comments":   v["n"],
+              "n_mod_removed":  v["mod_removed"],
+              "n_self_deleted": v["self_deleted"],
+              # C_raw_clean: enforcement only (moderator removals) — use for ODE
+              "C_raw_clean": v["mod_removed"] / max(v["n"], 1),
+              # x_raw: self-deletion rate — reported separately
+              "x_raw":       v["self_deleted"] / max(v["n"], 1),
+              # C_raw: legacy combined metric
+              "C_raw":       (v["mod_removed"] + v["self_deleted"]) / max(v["n"], 1),
+              "mean_score":  v["score_sum"] / max(v["n"], 1)}
              for (s, d), v in daily_agg.items()]
 
     metrics = pd.DataFrame(rows).sort_values(["subreddit", "day"])
@@ -227,7 +266,7 @@ def build_daily_metrics(out_dir):
                             on=["subreddit", "day"], how="left")
     metrics = metrics.sort_values(["subreddit", "day"])
 
-    metrics["C_smooth"] = metrics.groupby("subreddit")["C_raw"].transform(
+    metrics["C_smooth"] = metrics.groupby("subreddit")["C_raw_clean"].transform(
         lambda s: s.shift(1).rolling(3, min_periods=1).mean())
     metrics["T_proxy"]  = metrics.groupby("subreddit")["mean_sub_score"].transform(
         lambda s: s.shift(1).rolling(7, min_periods=1).mean())
@@ -297,12 +336,23 @@ def estimate_user_thresholds(out_dir, daily_metrics):
             "removal_rate": rr, "avg_C": avg_C,
             "avg_C_on_removed": avg_C_rem,
             "theta_proxy": (1 - rr) * avg_C_rem,
-            "user_type": ("INITIATOR" if rr >= 0.30 and avg_C >= 0.1
-                          else "JOINER" if rr >= 0.05 else "COMPLIER"),
         })
 
     banned_users = {a for (a, s) in user_agg if s in BANNED_SUBREDDITS}
     df = pd.DataFrame(rows)
+
+    # Z-score classification: relative to each subreddit's own distribution.
+    # This replaces the indefensible global thresholds (0.30 / 0.05).
+    sub_stats = (df.groupby("subreddit")["removal_rate"]
+                   .agg(sub_mu="mean", sub_sigma="std")
+                   .reset_index())
+    df = df.merge(sub_stats, on="subreddit", how="left")
+    df["removal_rate_z"] = ((df["removal_rate"] - df["sub_mu"])
+                            / (df["sub_sigma"].fillna(1e-9) + 1e-9))
+    df["user_type"] = np.where(
+        df["removal_rate_z"] > 2.0, "INITIATOR",
+        np.where(df["removal_rate_z"] > 0.5, "JOINER", "COMPLIER"))
+
     df["from_banned_sub"] = df["author"].isin(banned_users)
     df.to_parquet(out_path, index=False)
     log.info(f"User thresholds: {len(df):,} pairs")
