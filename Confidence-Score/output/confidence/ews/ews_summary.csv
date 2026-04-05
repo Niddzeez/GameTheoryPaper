@@ -1,0 +1,2 @@
+n_subreddits,n_banned,n_control,LOO_AUC,banned_correct,control_correct
+16,2,14,0.6071,1,11

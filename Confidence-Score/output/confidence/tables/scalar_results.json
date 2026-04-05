@@ -1,0 +1,46 @@
+{
+  "Q_substitution": {
+    "beta1_TC": 0.0043396302259861574,
+    "beta1_SE": 0.004535671932334525,
+    "beta1_t": 0.956777802876174,
+    "beta1_p": 0.338817322758719,
+    "beta2_compliance": -0.9270377721525085,
+    "r2_pooled": 0.9019219623561306,
+    "partial_r_TC": 0.023357483895693688,
+    "partial_r_p": 0.3386733098916646,
+    "n_obs": 1680,
+    "Q_substitution_score": 0.48832125805215315
+  },
+  "Q_user": {
+    "F_stat": 3146.2291740243018,
+    "p_anova": 0.0,
+    "eta2": 0.01311968945071926,
+    "mean_rho_INIT": 0.0027071408069163413,
+    "mean_rho_JOIN": 0.01934960564069368,
+    "mean_rho_COMP": 0.0,
+    "mw_IJ_U": 1249.5,
+    "mw_IJ_p": 0.6475159400645055,
+    "mw_JC_U": 47547756.0,
+    "mw_JC_p": 1.4034534165967803e-41,
+    "n_INIT": 13,
+    "n_JOIN": 205,
+    "n_COMP": 473112,
+    "Q_user_score": 0.01311968945071926
+  },
+  "Q_spillover": {
+    "mw_U": NaN,
+    "mw_p": NaN,
+    "cohens_d": NaN,
+    "mean_rate_migrants": NaN,
+    "mean_rate_natives": 1.605553656980936e-05,
+    "n_migrants": 0,
+    "n_natives": 456507,
+    "Q_spillover_score": NaN
+  },
+  "sensitivity": {
+    "rho_mean": 0.9844194174757281,
+    "rho_min": 0.6970873786407767,
+    "rho_median": 1.0,
+    "n_draws": 500
+  }
+}

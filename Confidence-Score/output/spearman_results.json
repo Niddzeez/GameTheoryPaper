@@ -1,0 +1,153 @@
+{
+  "cohort_A_pushshift": {
+    "label": "Cohort A \u2014 2015 Pushshift",
+    "n": 15,
+    "rho": 0.1393,
+    "p": 0.6205,
+    "ci_lo": -0.4589,
+    "ci_hi": 0.6578,
+    "interpretation": "DIRECTIONAL but not significant: consistent with model, insufficient power"
+  },
+  "cohort_C_combined": {
+    "label": "Cohort A \u2014 2015 Pushshift",
+    "n": 15,
+    "rho": 0.1393,
+    "p": 0.6205,
+    "ci_lo": -0.4589,
+    "ci_hi": 0.6578,
+    "interpretation": "DIRECTIONAL but not significant: consistent with model, insufficient power"
+  },
+  "kruskal_wallis_prediction2": {
+    "statistic": 1.28,
+    "p": 0.2579,
+    "groups": {
+      "Indeterminate": {
+        "n": 10,
+        "median_slope": -0.00012
+      },
+      "Structural instability": {
+        "n": 4,
+        "median_slope": -0.00022
+      }
+    }
+  },
+  "preban_escalation_test": {
+    "description": "Test 4: Were banned subs showing declining pre-ban enforcement? (consistent with backfire)",
+    "hypothesis": "Banned subreddits have MORE NEGATIVE pre-ban C_smooth slope than controls",
+    "n_banned": 2,
+    "n_control": 14,
+    "banned_mean_slope": -0.0008815,
+    "banned_median_slope": -0.0008815,
+    "control_mean_slope": 0.0001744,
+    "control_median_slope": 8.28e-05,
+    "mannwhitney_U": 2.0,
+    "p_value": 0.0333,
+    "interpretation": "Banned subs show declining pre-ban enforcement (negative slopes), directionally consistent with backfire mechanism. MannWhitney p=0.0333 (one-sided: banned slope < control slope).",
+    "per_subreddit": [
+      {
+        "subreddit": "AskHistorians",
+        "is_banned": false,
+        "pre_slope": -0.0017505374810448393,
+        "pre_slope_p": 0.00907795406821449
+      },
+      {
+        "subreddit": "CoonTown",
+        "is_banned": true,
+        "pre_slope": -0.0009402915880159936,
+        "pre_slope_p": 0.0026322955495319982
+      },
+      {
+        "subreddit": "fatpeoplehate",
+        "is_banned": true,
+        "pre_slope": -0.0008227681564044751,
+        "pre_slope_p": 1.2596855619412786e-12
+      },
+      {
+        "subreddit": "politics",
+        "is_banned": false,
+        "pre_slope": -0.00025581415569638025,
+        "pre_slope_p": 0.020545968785861426
+      },
+      {
+        "subreddit": "MensRights",
+        "is_banned": false,
+        "pre_slope": -0.00020085118205634918,
+        "pre_slope_p": 0.3065913384156609
+      },
+      {
+        "subreddit": "TumblrInAction",
+        "is_banned": false,
+        "pre_slope": -0.00016350470188321298,
+        "pre_slope_p": 0.05322131092894938
+      },
+      {
+        "subreddit": "AskReddit",
+        "is_banned": false,
+        "pre_slope": -0.00013939916086395303,
+        "pre_slope_p": 0.25026917502128687
+      },
+      {
+        "subreddit": "KotakuInAction",
+        "is_banned": false,
+        "pre_slope": -0.00010424888735976704,
+        "pre_slope_p": 0.3371665348759282
+      },
+      {
+        "subreddit": "worldnews",
+        "is_banned": false,
+        "pre_slope": 4.414035173574708e-05,
+        "pre_slope_p": 0.7261780703004006
+      },
+      {
+        "subreddit": "loseit",
+        "is_banned": false,
+        "pre_slope": 0.00012145543783731283,
+        "pre_slope_p": 0.4169566165516565
+      },
+      {
+        "subreddit": "progresspics",
+        "is_banned": false,
+        "pre_slope": 0.0001428799306007174,
+        "pre_slope_p": 0.630950706246793
+      },
+      {
+        "subreddit": "funny",
+        "is_banned": false,
+        "pre_slope": 0.0001506236953133329,
+        "pre_slope_p": 0.08556994618055626
+      },
+      {
+        "subreddit": "todayilearned",
+        "is_banned": false,
+        "pre_slope": 0.00024368444482336573,
+        "pre_slope_p": 0.004276962387228535
+      },
+      {
+        "subreddit": "news",
+        "is_banned": false,
+        "pre_slope": 0.0003639159982247526,
+        "pre_slope_p": 0.01790006401970338
+      },
+      {
+        "subreddit": "science",
+        "is_banned": false,
+        "pre_slope": 0.0011609956328481488,
+        "pre_slope_p": 0.27566798991401104
+      },
+      {
+        "subreddit": "askscience",
+        "is_banned": false,
+        "pre_slope": 0.002828468532592935,
+        "pre_slope_p": 0.0010839183647460636
+      }
+    ]
+  },
+  "prediction3_enforcement_decay": {
+    "description": "Test 3: Do enforcement levels decline post-ban? (Prediction 3)",
+    "n_subreddits": 14,
+    "n_decreased": 7,
+    "mean_delta": -0.0039,
+    "wilcoxon_p": 0.4276,
+    "interpretation": "Enforcement declined in 7/14 control subreddits post-ban. Not statistically significant (p=0.43) but direction is mixed, reflecting community-specific responses."
+  }
+}

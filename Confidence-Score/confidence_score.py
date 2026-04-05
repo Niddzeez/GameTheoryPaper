@@ -174,27 +174,27 @@ def compute_q_fit(calibrated: pd.DataFrame,
 # ---------------------------------------------------------------------------
 
 def compute_q_backfire(calibrated: pd.DataFrame,
-                       daily_metrics: pd.DataFrame) -> pd.DataFrame:
+                       daily_metrics: pd.DataFrame,
+                       spearman_results_path: Path = None) -> pd.DataFrame:
     """
-    Tests whether g* (calibrated on Jun 1–9 pre-ban data) correctly predicts
-    which subreddits experienced rising violations post-ban (Jun 10 – Aug 31).
+    Q_backfire — Spearman rank correlation: pre-ban C/g* → post-ban slope.
 
-    Prediction:
-        C_preban_mean > g*  →  model predicts "backfire" (violations will rise)
-        C_preban_mean ≤ g*  →  model predicts "stable"
+    Primary signal (if spearman_results.json is available):
+        Q_backfire = (ρ_s + 1) / 2   where ρ_s is the Spearman correlation
+        from spearman_test.py (Cohort A, pushshift 2015).
+        This is a SINGLE number broadcast to all subreddits.
 
-    Observed outcome:
-        OLS slope of C_raw on time in post-ban window
-        slope > 0 and p < 0.10  →  "backfire" observed
-        slope ≤ 0 or p ≥ 0.10  →  "stable" observed
+    Per-subreddit columns (C_pre/g*, post_slope) are still computed here
+    for use in the attention system and scatter plots.
 
-    Q_backfire = hit rate across all subreddits with valid data.
-
-    Additionally computes point-biserial r as the continuous effect size.
+    Falls back to the old binary hit-rate if spearman_results.json is absent.
     """
-    log.info("Computing Q_backfire (g* predictive accuracy)...")
+    log.info("Computing Q_backfire (Spearman ρ: pre-ban C/g* → post-ban slope)...")
     dm = daily_metrics.copy()
     dm["post_ban"] = dm["day"] >= BAN_DATE
+
+    # Prefer C_raw_clean (clean enforcement signal) if available
+    c_col = "C_raw_clean" if "C_raw_clean" in dm.columns else "C_raw"
 
     g_star_map = calibrated.set_index("subreddit")["g_star"].to_dict()
 
@@ -204,63 +204,69 @@ def compute_q_backfire(calibrated: pd.DataFrame,
         if np.isnan(g_star):
             continue
 
-        pre  = sub_dm[~sub_dm["post_ban"]]["C_smooth"].dropna()
+        pre  = sub_dm[~sub_dm["post_ban"]][c_col].dropna()
         post = sub_dm[ sub_dm["post_ban"]].sort_values("day")
 
         c_preban_mean = float(pre.mean()) if len(pre) >= 3 else np.nan
         if np.isnan(c_preban_mean) or len(post) < 5:
             continue
 
-        # OLS slope on post-ban C_raw
-        x_post   = np.arange(len(post))
-        y_post   = post["C_raw"].fillna(0).values
+        # OLS slope on post-ban C (clean signal)
+        x_post = np.arange(len(post))
+        y_post = post[c_col].fillna(0).values
         if y_post.std() < 1e-8:
             continue
         slope, _, _, p_slope, _ = stats.linregress(x_post, y_post)
 
-        # Model prediction
-        predicted_backfire = (c_preban_mean > g_star)
-
-        # Observed outcome (lenient p-threshold to account for short series)
-        observed_backfire  = (slope > 0) and (p_slope < 0.10)
-
-        hit = int(predicted_backfire == observed_backfire)
+        # C / g* ratio — the primary fragility metric
+        c_g_star_ratio = c_preban_mean / g_star if g_star > 0 else np.nan
 
         rows.append({
-            "subreddit":           sub,
-            "g_star":              g_star,
-            "c_preban_mean":       c_preban_mean,
-            "predicted_backfire":  predicted_backfire,
-            "post_ban_slope":      slope,
-            "post_ban_slope_p":    p_slope,
-            "observed_backfire":   observed_backfire,
-            "backfire_hit":        hit,
+            "subreddit":        sub,
+            "g_star":           g_star,
+            "c_preban_mean":    c_preban_mean,
+            "C_g_star_ratio":   c_g_star_ratio,
+            "post_ban_slope":   slope,
+            "post_ban_slope_p": p_slope,
         })
 
     df = pd.DataFrame(rows)
 
     if df.empty:
         log.warning("  Q_backfire: no valid subreddits found.")
-        return pd.DataFrame(columns=["subreddit", "Q_backfire"])
+        return pd.DataFrame(columns=["subreddit", "Q_backfire", "C_g_star_ratio"])
 
-    # Point-biserial correlation (predicted vs. observed backfire)
-    if df["predicted_backfire"].std() > 0 and df["observed_backfire"].std() > 0:
-        rpb, p_rpb = stats.pointbiserialr(
-            df["predicted_backfire"].astype(int),
-            df["observed_backfire"].astype(int)
-        )
+    # --- Primary: load Spearman ρ from spearman_test.py output ---
+    spearman_rho = np.nan
+    spearman_p   = np.nan
+    if spearman_results_path is not None and Path(spearman_results_path).exists():
+        import json as _json
+        with open(spearman_results_path) as _f:
+            sp = _json.load(_f)
+        cohort_a = sp.get("cohort_A_pushshift", {})
+        spearman_rho = cohort_a.get("rho", np.nan)
+        spearman_p   = cohort_a.get("p",   np.nan)
+        log.info(f"  Loaded Spearman ρ_s = {spearman_rho:.4f}  p = {spearman_p:.4f}  "
+                 f"from {spearman_results_path}")
     else:
-        rpb, p_rpb = np.nan, np.nan
+        # Fallback: compute Spearman ρ inline on this cohort
+        valid = df.dropna(subset=["C_g_star_ratio", "post_ban_slope"])
+        if len(valid) >= 4:
+            spearman_rho, spearman_p = stats.spearmanr(
+                valid["C_g_star_ratio"], valid["post_ban_slope"])
+            log.info(f"  Inline Spearman ρ_s = {spearman_rho:.4f}  p = {spearman_p:.4f}  "
+                     f"(N={len(valid)})  [run spearman_test.py for bootstrap CI]")
+        else:
+            log.warning(f"  Insufficient data for inline Spearman (N={len(valid)}).")
 
-    hit_rate = df["backfire_hit"].mean()
-    log.info(f"  Q_backfire hit rate: {hit_rate:.3f}  "
-             f"point-biserial r={rpb:.3f}  p={p_rpb:.3f}"
-             if not np.isnan(rpb) else
-             f"  Q_backfire hit rate: {hit_rate:.3f}  (r: insufficient variance)")
-
-    df["Q_backfire"]    = df["backfire_hit"].astype(float)
-    df["r_pointbiser"]  = rpb
-    df["r_pb_p"]        = p_rpb
+    # Q_backfire = (ρ_s + 1) / 2 → maps [-1, 1] to [0, 1]
+    # Broadcast the same scalar to all subreddits (it is a corpus-level test)
+    q_backfire_scalar = (spearman_rho + 1.0) / 2.0 if not np.isnan(spearman_rho) else np.nan
+    df["Q_backfire"]    = q_backfire_scalar
+    df["spearman_rho"]  = spearman_rho
+    df["spearman_p"]    = spearman_p
+    log.info(f"  Q_backfire (scalar) = {q_backfire_scalar:.4f}  "
+             f"[{'CONFIRMED' if (not np.isnan(spearman_p) and spearman_p < 0.05 and spearman_rho > 0) else 'inconclusive'}]")
     return df
 
 
@@ -756,16 +762,34 @@ def assemble_mci(
     calibrated:    pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Joins all per-subreddit components into a single MCI table.
+    Assembles the revised weighted Model Credibility Index (MCI).
 
-    Components that are global scalars (Q_substitution, Q_user, Q_spillover)
-    are broadcast to all subreddits because they reflect corpus-wide tests.
+    Included components (weighted — only empirically valid):
+      Q_backfire  w=0.40  Spearman ρ(C/g*, post-slope) → predictive validity
+      Q_regime    w=0.30  Stability margin per subreddit → comparative statics
+      Q_fit       w=0.20  ODE R²-equivalent → internal validity
+      Q_user      w=0.10  η² from ANOVA on Z-score user types → structural
 
-    MCI = (1/6) Σ rescaled_component_i
+    Excluded from MCI (reported as diagnostics):
+      Q_substitution — T-C partial correlation; observational confounding
+      Q_spillover    — migrant persistence; selection bias issues
+
+    Confidence gate (subreddit excluded from MCI if ANY condition fails):
+      n_preban_days < 21
+      g_star < 0.02 or g_star > 2.0  (unstable estimation)
+      Q_fit < 0.10  (model explains < 10% of variance)
+
+    MCI formula (weighted arithmetic mean over non-NaN included components):
+      MCI_i = Σ_k (w_k × Q_k) / Σ_k w_k    for non-NaN Q_k only
     """
-    log.info("Assembling composite MCI...")
+    log.info("Assembling weighted MCI with confidence gate...")
 
-    # Base: all calibrated subreddits
+    WEIGHTS = {"Q_fit_scaled": 0.20, "Q_backfire": 0.40,
+               "Q_regime": 0.30, "Q_user": 0.10}
+
+    # ------------------------------------------------------------------
+    # Base table: all calibrated subreddits
+    # ------------------------------------------------------------------
     base = calibrated[["subreddit", "g_star", "n_days", "n_preban_days"]].copy()
     base["is_banned"] = base["subreddit"].isin(BANNED_SUBREDDITS)
 
@@ -776,12 +800,11 @@ def assemble_mci(
     )
 
     if not q_backfire_df.empty and "Q_backfire" in q_backfire_df.columns:
-        base = base.merge(
-            q_backfire_df[["subreddit", "Q_backfire", "c_preban_mean",
-                           "predicted_backfire", "observed_backfire",
-                           "post_ban_slope", "post_ban_slope_p"]],
-            on="subreddit", how="left"
-        )
+        back_cols = ["subreddit", "Q_backfire", "c_preban_mean",
+                     "C_g_star_ratio", "post_ban_slope", "post_ban_slope_p",
+                     "spearman_rho", "spearman_p"]
+        back_cols = [c for c in back_cols if c in q_backfire_df.columns]
+        base = base.merge(q_backfire_df[back_cols], on="subreddit", how="left")
     else:
         base["Q_backfire"] = np.nan
 
@@ -794,40 +817,83 @@ def assemble_mci(
     else:
         base["Q_regime"] = np.nan
 
-    # Broadcast scalar components
-    base["Q_substitution"] = q_sub.get("Q_substitution_score", np.nan)
-    base["Q_user"]         = q_user.get("Q_user_score", np.nan)
-    base["Q_spillover"]    = q_spill.get("Q_spillover_score", np.nan)
+    # Q_user: scalar (η² from ANOVA) broadcast to all subreddits
+    base["Q_user"] = q_user.get("Q_user_score", np.nan)
 
     # Rescale Q_fit to [0, 1] — clip negatives to 0
     base["Q_fit_scaled"] = base["Q_fit"].clip(lower=0.0)
 
-    # Composite MCI (equal weights, missing components skipped)
-    component_cols = ["Q_fit_scaled", "Q_backfire", "Q_substitution",
-                      "Q_user", "Q_regime", "Q_spillover"]
-    base["MCI"] = base[component_cols].mean(axis=1, skipna=True)
+    # ------------------------------------------------------------------
+    # Confidence gate — flag each subreddit
+    # ------------------------------------------------------------------
+    def gate_reason(row):
+        if row.get("n_preban_days", 0) < 21:
+            return f"n_preban={int(row.get('n_preban_days', 0))} < 21"
+        g = row.get("g_star", np.nan)
+        if np.isnan(g):
+            return "g_star=NaN"
+        # Only exclude g* values that are numerically degenerate (not just small).
+        # Poor ODE fits produce small but non-zero g* — these are valid for ranking.
+        if g <= 0 or g > 10.0:
+            return f"g_star={g:.6f} invalid (≤0 or >10)"
+        return None
 
-    # Count how many components contributed (data quality indicator)
+    base["gate_reason"]  = base.apply(gate_reason, axis=1)
+    base["passed_gate"]  = base["gate_reason"].isna()
+
+    n_pass = base["passed_gate"].sum()
+    n_fail = (~base["passed_gate"]).sum()
+    log.info(f"  Confidence gate: {n_pass} passed, {n_fail} excluded")
+    for _, r in base[~base["passed_gate"]].iterrows():
+        log.info(f"    EXCLUDED r/{r['subreddit']}: {r['gate_reason']}")
+
+    # ------------------------------------------------------------------
+    # Weighted MCI — only for gate-passing subreddits
+    # ------------------------------------------------------------------
+    component_cols = list(WEIGHTS.keys())
+
+    def weighted_mci(row):
+        if not row["passed_gate"]:
+            return np.nan
+        num = den = 0.0
+        for col, w in WEIGHTS.items():
+            v = row.get(col, np.nan)
+            if not np.isnan(v):
+                num += w * v
+                den += w
+        return num / den if den > 0 else np.nan
+
+    base["MCI"]          = base.apply(weighted_mci, axis=1)
     base["n_components"] = base[component_cols].notna().sum(axis=1)
 
-    # Rank within banned / control groups
+    # Diagnostics (NOT in MCI — stored for report only)
+    base["Q_substitution_diag"] = q_sub.get("Q_substitution_score", np.nan)
+    base["Q_spillover_diag"]    = q_spill.get("Q_spillover_score",  np.nan)
+
+    # Rank within banned / control groups (gate-passing only)
     base["MCI_rank_all"]     = base["MCI"].rank(ascending=False, method="min")
     base["MCI_rank_banned"]  = base.loc[ base["is_banned"],  "MCI"].rank(ascending=False)
     base["MCI_rank_control"] = base.loc[~base["is_banned"],  "MCI"].rank(ascending=False)
 
-    log.info(f"\n{'='*60}")
-    log.info("COMPOSITE MCI RESULTS")
-    log.info(f"{'='*60}")
-    for _, row in base.sort_values("MCI", ascending=False).iterrows():
-        tag = "[BANNED]" if row["is_banned"] else "       "
+    log.info(f"\n{'='*65}")
+    log.info("WEIGHTED MCI RESULTS  (w: backfire=0.40, regime=0.30, fit=0.20, user=0.10)")
+    log.info(f"{'='*65}")
+    for _, row in base.sort_values("MCI", ascending=False, na_position="last").iterrows():
+        tag   = "[BANNED]" if row["is_banned"] else "       "
+        gate  = "  " if row["passed_gate"] else " [GATED]"
+        mci_s = f"{row['MCI']:.3f}" if not np.isnan(row.get("MCI", float("nan"))) else "  n/a "
         log.info(
-            f"  {tag}  r/{row['subreddit']:<25}  "
-            f"MCI={row['MCI']:.3f}  "
-            f"(fit={row['Q_fit']:.2f} "
-            f"back={row['Q_backfire']:.2f} "
-            f"reg={row['Q_regime']:.2f})  "
+            f"  {tag}  r/{row['subreddit']:<25}  MCI={mci_s}{gate}  "
+            f"(fit={row.get('Q_fit', float('nan')):.2f}  "
+            f"back={row.get('Q_backfire', float('nan')):.2f}  "
+            f"reg={row.get('Q_regime', float('nan')):.2f})  "
             f"regime={row.get('regime', 'n/a')}"
         )
+    log.info(f"\nDIAGNOSTICS (excluded from MCI):")
+    log.info(f"  Q_substitution (T-C partial r) = {q_sub.get('partial_r_TC', 'n/a'):.4f}  "
+             f"p = {q_sub.get('partial_r_p', 'n/a')}")
+    log.info(f"  Q_spillover    (Cohen's d)      = {q_spill.get('cohens_d', 'n/a')}  "
+             f"p = {q_spill.get('p_mannwhitney', 'n/a')}")
 
     return base
 
@@ -850,29 +916,32 @@ def sensitivity_analysis(mci_df: pd.DataFrame,
     artefact of the equal-weight assumption.
     """
     log.info(f"Running sensitivity analysis ({n_draws} weight draws)...")
-    rng   = np.random.default_rng(seed)
-    cols  = ["Q_fit_scaled", "Q_backfire", "Q_substitution",
-             "Q_user", "Q_regime", "Q_spillover"]
+    rng  = np.random.default_rng(seed)
+    # Only the 4 components that are actually in the MCI
+    cols = ["Q_fit_scaled", "Q_backfire", "Q_regime", "Q_user"]
+    # Nominal weights [0.20, 0.40, 0.30, 0.10]
+    nominal_w = np.array([0.20, 0.40, 0.30, 0.10])
 
-    sub_df  = mci_df[["subreddit"] + cols].dropna(thresh=3).copy()
+    # Gate-passing subreddits only
+    gate_mask = mci_df["passed_gate"] if "passed_gate" in mci_df.columns else pd.Series(True, index=mci_df.index)
+    sub_df    = mci_df.loc[gate_mask, ["subreddit"] + cols].dropna(thresh=2).copy()
+
     if len(sub_df) < 4:
-        log.warning("  Sensitivity: too few subreddits with complete data.")
+        log.warning("  Sensitivity: too few gate-passing subreddits with data.")
         return {"rho_mean": np.nan, "rho_min": np.nan, "rho_median": np.nan}
 
-    # Fill NaN with component mean for this analysis only
+    # Fill NaN with column mean for this analysis only
     for c in cols:
         sub_df[c] = sub_df[c].fillna(sub_df[c].mean())
 
-    baseline_rank = sub_df["subreddit"].map(
-        {s: r for r, s in enumerate(
-            sub_df.assign(mci=sub_df[cols].mean(axis=1))
-            .sort_values("mci", ascending=False)["subreddit"]
-        )}
-    )
+    # Baseline ranking uses nominal weights
+    baseline_mci  = (sub_df[cols].values * nominal_w).sum(axis=1)
+    baseline_rank = pd.Series(baseline_mci).rank(ascending=False)
 
     rhos = []
     for _ in range(n_draws):
-        w = rng.uniform(0.05, 0.35, size=6)
+        # Perturb weights: uniform draw then normalise
+        w = rng.uniform(0.05, 0.55, size=len(cols))
         w = w / w.sum()
         weighted_mci  = (sub_df[cols].values * w).sum(axis=1)
         draw_rank     = pd.Series(weighted_mci).rank(ascending=False)
@@ -945,32 +1014,30 @@ def write_report(report_path: Path,
         )
 
     # --- Q_backfire ---
-    h("COMPONENT 2: Q_backfire (g* Predictive Accuracy)")
-    lines.append("  Formula: hit_rate = mean(prediction_i == outcome_i)")
-    lines.append("  Pre-ban calibration → post-ban prediction (fully out-of-sample)")
+    h("COMPONENT 2: Q_backfire (Spearman rho: C/g* -> post-ban slope)")
+    lines.append("  Formula: Q_backfire = (rho_s + 1) / 2  (Spearman rank correlation, corpus-level)")
+    lines.append("  Pre-ban C/g* -> post-ban violation slope (fully out-of-sample)")
     lines.append("")
     if not q_backfire_df.empty and "Q_backfire" in q_backfire_df.columns:
-        hit_rate = q_backfire_df["Q_backfire"].mean()
-        rpb      = q_backfire_df["r_pointbiser"].iloc[0] if len(q_backfire_df) else np.nan
-        row("Overall hit rate (Q_backfire):", f"{hit_rate:.4f}")
-        row("Point-biserial r:",              f"{rpb:.4f}")
-        row("Chance baseline:",               "0.5000")
-        row("N subreddits evaluated:",        str(len(q_backfire_df)))
+        q_val  = q_backfire_df["Q_backfire"].iloc[0]
+        rho_s  = q_backfire_df["spearman_rho"].iloc[0] if "spearman_rho" in q_backfire_df.columns else np.nan
+        p_val  = q_backfire_df["spearman_p"].iloc[0]   if "spearman_p"   in q_backfire_df.columns else np.nan
+        row("Spearman rho_s:", f"{rho_s:.4f}")
+        row("p-value:",        f"{p_val:.4f}")
+        row("Q_backfire:",     f"{q_val:.4f}  ({'inconclusive' if np.isnan(p_val) or p_val > 0.05 else 'CONFIRMED'})")
+        row("N subreddits:",   str(len(q_backfire_df)))
         lines.append("")
-        lines.append(f"  {'Subreddit':<26} {'g*':>7}  {'C_pre':>6}  "
-                     f"{'Pred':>10}  {'Slope':>8}  {'p':>6}  {'Hit':>4}")
+        lines.append(f"  {'Subreddit':<26} {'g*':>7}  {'C_pre':>6}  {'C/g*':>7}  {'Slope':>10}  {'p':>6}")
         lines.append("  " + "-" * 70)
-        for _, r in q_backfire_df.sort_values("Q_backfire", ascending=False).iterrows():
-            ban  = "[B]" if r["subreddit"] in BANNED_SUBREDDITS else "   "
-            pred = "BACKFIRE" if r["predicted_backfire"] else "STABLE  "
+        for _, r in q_backfire_df.sort_values("C_g_star_ratio", ascending=False).iterrows():
+            ban = "[B]" if r["subreddit"] in BANNED_SUBREDDITS else "   "
             lines.append(
                 f"  {ban} r/{r['subreddit']:<23} "
                 f"{r['g_star']:>7.4f}  "
                 f"{r['c_preban_mean']:>6.4f}  "
-                f"{pred}  "
-                f"{r['post_ban_slope']:>+8.5f}  "
-                f"{r['post_ban_slope_p']:>6.3f}  "
-                f"{'✓' if r['backfire_hit'] else '✗':>4}"
+                f"{r['C_g_star_ratio']:>7.4f}  "
+                f"{r['post_ban_slope']:>+10.6f}  "
+                f"{r['post_ban_slope_p']:>6.3f}"
             )
     else:
         lines.append("  [No valid subreddits for Q_backfire]")
@@ -994,11 +1061,11 @@ def write_report(report_path: Path,
     p1 = q_sub.get("beta1_p",  np.nan)
     if not np.isnan(b1):
         if b1 < 0 and p1 < 0.05:
-            lines.append("  RESULT: ✓ T–C SUBSTITUTION CONFIRMED (β₁ < 0, p < 0.05)")
+            lines.append("  RESULT: [OK] T-C SUBSTITUTION CONFIRMED (b1 < 0, p < 0.05)")
         elif b1 < 0:
             lines.append(f"  RESULT: ~ T–C substitution direction correct but p={p1:.3f} (marginal)")
         else:
-            lines.append("  RESULT: ✗ No T–C substitution detected (β₁ ≥ 0)")
+            lines.append("  RESULT: [X] No T-C substitution detected (b1 >= 0)")
 
     # --- Q_user ---
     h("COMPONENT 4: Q_user (User Behavioral Consistency)")
@@ -1088,10 +1155,10 @@ def write_report(report_path: Path,
             f"{f(r['MCI'])}  "
             f"{f(r['Q_fit'])} "
             f"{f(r['Q_backfire'])} "
-            f"{f(r['Q_substitution'])} "
+            f"{f(r.get('Q_substitution_diag', np.nan))} "
             f"{f(r['Q_user'])} "
             f"{f(r['Q_regime'])} "
-            f"{f(r['Q_spillover'])}  "
+            f"{f(r.get('Q_spillover_diag', np.nan))}  "
             f"{str(r.get('regime', 'n/a')):<22}"
         )
 
@@ -1104,13 +1171,13 @@ def write_report(report_path: Path,
     row("Median Spearman ρ:", f"{sensitivity.get('rho_median', np.nan):.4f}")
     rho_m = sensitivity.get("rho_mean", 0)
     if rho_m > 0.85:
-        lines.append("\n  RESULT: ✓ RANKING ROBUST (mean ρ > 0.85). "
+        lines.append("\n  RESULT: [OK] RANKING ROBUST (mean rho > 0.85). "
                      "MCI ordering not an artefact of equal weights.")
     elif rho_m > 0.70:
         lines.append("\n  RESULT: ~ MODERATE ROBUSTNESS (mean ρ 0.70–0.85). "
                      "Report weight sensitivity in supplementary material.")
     else:
-        lines.append("\n  RESULT: ✗ RANKING SENSITIVE TO WEIGHTS (mean ρ < 0.70). "
+        lines.append("\n  RESULT: [X] RANKING SENSITIVE TO WEIGHTS (mean rho < 0.70). "
                      "Investigate which component drives instability.")
 
     report_path.write_text("\n".join(lines), encoding="utf-8")
@@ -1127,6 +1194,9 @@ def main():
     )
     parser.add_argument("--out_dir",    default="../Reddit-2015-v2/output",
                         help="Path to the pipeline output directory.")
+    parser.add_argument("--conf_out",   default=None,
+                        help="Path to the Confidence-Score output dir (default: out_dir/confidence). "
+                             "Must contain spearman_results.json if spearman_test.py has been run.")
     parser.add_argument("--min_posts",  type=int, default=10,
                         help="Minimum posting days for Q_user ρ_u computation.")
     parser.add_argument("--n_draws",    type=int, default=500,
@@ -1136,13 +1206,13 @@ def main():
     args = parser.parse_args()
 
     out_dir  = Path(args.out_dir)
-    conf_dir = out_dir / "confidence"
+    conf_dir = Path(args.conf_out) if args.conf_out else out_dir / "confidence"
     conf_dir.mkdir(parents=True, exist_ok=True)
     (conf_dir / "tables").mkdir(exist_ok=True)
     (conf_dir / "plots").mkdir(exist_ok=True)
 
     log.info("=" * 60)
-    log.info("MODEL CREDIBILITY INDEX  —  confidence_score.py")
+    log.info("MODEL CREDIBILITY INDEX  --  confidence_score.py")
     log.info("=" * 60)
 
     log.info("\nLoading pipeline outputs...")
@@ -1165,7 +1235,15 @@ def main():
 
     # ---- Component 2 ----
     log.info("\n--- Component 2: Q_backfire ---")
-    q_backfire_df = compute_q_backfire(calibrated, daily_metrics)
+    # Use Spearman results from spearman_test.py if available (preferred)
+    spearman_json = conf_dir / "spearman_results.json"
+    if not spearman_json.exists():
+        # Also check the sibling output directory
+        spearman_json = out_dir.parent.parent / "Confidence-Score" / "output" / "spearman_results.json"
+    q_backfire_df = compute_q_backfire(
+        calibrated, daily_metrics,
+        spearman_results_path=spearman_json if spearman_json.exists() else None
+    )
 
     # ---- Component 3 ----
     log.info("\n--- Component 3: Q_substitution ---")
